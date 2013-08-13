@@ -1,3 +1,14 @@
+pyemotiv-synetiq
+----------------
+
+A fork of pyemotiv, including full access to the SDK features. Immature in it's current state.
+
+Based on pyemotiv, an example code from the Emotiv website by an unknown author (1),
+interfaces generated using CTypesGen(2) and my own work. 
+
+(1) http://emotiv.com/bitrix/components/bitrix/forum.interface/show_file.php?fid=4258
+(2) https://code.google.com/p/ctypesgen/
+
 pyemotiv
 ---------
 

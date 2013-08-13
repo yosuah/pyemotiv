@@ -1,100 +1,13 @@
 from ctypes import *
 import numpy as np
 import time, sys
-from emotivErrorCodes import errorCodes
-
-# http://emotiv.com/bitrix/components/bitrix/forum.interface/show_file.php?fid=4258
+import edk
 
 class Epoc(object):
-    def loadDLL(self):
-        #setup access to binaries
-        if sys.platform=='darwin':
-            edk_file='libedk.1.0.0.dylib'
-        elif sys.platform=='win32':
-            sys.path.append('lib')
-            edk_file='edk.dll'
-        self.edk=CDLL(edk_file)
-
-    def initializeExternalFunctions(self):
-        EE_EmoEngineEventCreate = self.edk.EE_EmoEngineEventCreate
-        EE_EmoEngineEventCreate.restype = c_void_p
-        self.eEvent      = EE_EmoEngineEventCreate()
-        
-        EE_EmoEngineEventGetEmoState = self.edk.EE_EmoEngineEventGetEmoState
-        EE_EmoEngineEventGetEmoState.argtypes=[c_void_p,c_void_p]
-        EE_EmoEngineEventGetEmoState.restype = c_int
-        
-        ES_GetTimeFromStart = self.edk.ES_GetTimeFromStart
-        ES_GetTimeFromStart.argtypes=[c_void_p]
-        ES_GetTimeFromStart.restype = c_float
-        
-        EE_EmoStateCreate = self.edk.EE_EmoStateCreate
-        EE_EmoStateCreate.restype = c_void_p
-        self.eState=EE_EmoStateCreate()
-        
-        ES_GetWirelessSignalStatus=self.edk.ES_GetWirelessSignalStatus
-        ES_GetWirelessSignalStatus.restype = c_int
-        ES_GetWirelessSignalStatus.argtypes = [c_void_p]
-        
-        ES_ExpressivIsBlink=self.edk.ES_ExpressivIsBlink
-        ES_ExpressivIsBlink.restype = c_int
-        ES_ExpressivIsBlink.argtypes= [c_void_p]
-        
-        ES_ExpressivIsLeftWink=self.edk.ES_ExpressivIsLeftWink
-        ES_ExpressivIsLeftWink.restype = c_int
-        ES_ExpressivIsLeftWink.argtypes= [c_void_p]
-        
-        ES_ExpressivIsRightWink=self.edk.ES_ExpressivIsRightWink
-        ES_ExpressivIsRightWink.restype = c_int
-        ES_ExpressivIsRightWink.argtypes= [c_void_p]
-        
-        ES_ExpressivIsLookingLeft=self.edk.ES_ExpressivIsLookingLeft
-        ES_ExpressivIsLookingLeft.restype = c_int
-        ES_ExpressivIsLookingLeft.argtypes= [c_void_p]
-        
-        ES_ExpressivIsLookingRight=self.edk.ES_ExpressivIsLookingRight
-        ES_ExpressivIsLookingRight.restype = c_int
-        ES_ExpressivIsLookingRight.argtypes= [c_void_p]
-        
-        ES_ExpressivGetUpperFaceAction=self.edk.ES_ExpressivGetUpperFaceAction
-        ES_ExpressivGetUpperFaceAction.restype = c_int
-        ES_ExpressivGetUpperFaceAction.argtypes= [c_void_p]
-        
-        ES_ExpressivGetUpperFaceActionPower=self.edk.ES_ExpressivGetUpperFaceActionPower
-        ES_ExpressivGetUpperFaceActionPower.restype = c_float
-        ES_ExpressivGetUpperFaceActionPower.argtypes= [c_void_p]
-        
-        ES_ExpressivGetLowerFaceAction=self.edk.ES_ExpressivGetLowerFaceAction
-        ES_ExpressivGetLowerFaceAction.restype = c_int
-        ES_ExpressivGetLowerFaceAction.argtypes= [c_void_p]
-        
-        ES_ExpressivGetLowerFaceActionPower=self.edk.ES_ExpressivGetLowerFaceActionPower
-        ES_ExpressivGetLowerFaceActionPower.restype = c_float
-        ES_ExpressivGetLowerFaceActionPower.argtypes= [c_void_p]
-        
-        ES_AffectivGetExcitementShortTermScore=self.edk.ES_AffectivGetExcitementShortTermScore
-        ES_AffectivGetExcitementShortTermScore.restype = c_float
-        ES_AffectivGetExcitementShortTermScore.argtypes= [c_void_p]
-        
-        ES_AffectivGetExcitementLongTermScore=self.edk.ES_AffectivGetExcitementLongTermScore
-        ES_AffectivGetExcitementLongTermScore.restype = c_float
-        ES_AffectivGetExcitementLongTermScore.argtypes= [c_void_p]
-        
-        
-        ES_AffectivGetEngagementBoredomScore=self.edk.ES_AffectivGetEngagementBoredomScore
-        ES_AffectivGetEngagementBoredomScore.restype = c_float
-        ES_AffectivGetEngagementBoredomScore.argtypes= [c_void_p]
-        
-        ES_CognitivGetCurrentAction=self.edk.ES_CognitivGetCurrentAction
-        ES_CognitivGetCurrentAction.restype = c_int
-        ES_CognitivGetCurrentAction.argtypes= [c_void_p]
-        
-        ES_CognitivGetCurrentActionPower=self.edk.ES_CognitivGetCurrentActionPower
-        ES_CognitivGetCurrentActionPower.restype = c_float
-        ES_CognitivGetCurrentActionPower.argtypes= [c_void_p]
-
-
     def initializeInternalVariables(self):
+        self.eEvent = edk.EE_EmoEngineEventCreate()
+        self.eState = edk.EE_EmoStateCreate()
+        
         self.userId = 0
         self.channels = [ 'ED_COUNTER','ED_INTERPOLATED','ED_RAW_CQ',
                           'ED_AF3','ED_F7','ED_F3','ED_FC5','ED_T7',
@@ -115,52 +28,61 @@ class Epoc(object):
         self.sr = 1/127.94
         self.times = [0.]
         
-        self.composerPort = c_uint(1726)
+        self.composerPort = 1726
 
     """
     Class that connects to Emotiv Epoc by wrapping the 
     research SDK dynamic link libraries
     """
-    def __init__(self):
-        self.loadDLL()
-        self.initializeExternalFunctions()
+    def __init__(self, connectionType = "local", connectionTimeout = 10):
         self.initializeInternalVariables()
+        
+        self.f = open('ES.txt', 'w')
+        header = ['Time','UserID','Wireless Signal Status','Blink','Wink Left','Wink Right','Look Left','Look Right','Eyebrow','Furrow','Smile','Clench','Smirk Left','Smirk Right','Laugh','Short Term Excitement','Long Term Excitement','Engagement/Boredom','Cognitiv Action','Cognitiv Power']
+        print >> self.f,header
         
         self.connected = False
         # either "local" or "remote"
         self.connectionType = "remote"
+        self.connectionTimeout = connectionTimeout
         
         self.justRawData = False
         
-    def connect(self, timeout = 10):   
+        self.debug = True
+    
+    
+    def connect(self):   
         """
         Establishes connection to Emotiv Epoc
         """
-        if self.connectionType == "local":
-            if self.edk.EE_EngineConnect("Emotiv Systems-5") != 0:
-                raise Exception("Emotiv Engine start up failed.")
-        elif self.connectionType == "remote":
-            if self.edk.EE_EngineRemoteConnect("127.0.0.1", self.composerPort) != 0:
-                raise Exception("Cannot connect to EmoComposer on")
-        else:
-            raise Exception("Unknow connection type - please specify either 'local' or 'remote'.")
-        
-        self.data_handler = self.edk.EE_DataCreate()
-        self.edk.EE_DataSetBufferSizeInSec(5)
-        
+        if self.debug:
+            print 'Connecting..'
 
-        state = self.edk.EE_EngineGetNextEvent(self.eEvent)
+        if self.connectionType == "local":
+            if edk.EE_EngineConnect("Emotiv Systems-5") != 0:
+                raise PyemotivException("Emotiv Engine start up failed.")
+        elif self.connectionType == "remote":
+            if edk.EE_EngineRemoteConnect("127.0.0.1", self.composerPort, "Emotiv Systems-5") != 0:
+                raise PyemotivException("Cannot connect to EmoComposer on")
+        else:
+            raise PyemotivException("Unknow connection type - please specify either 'local' or 'remote'.")
+        
+        self.data_handler = edk.EE_DataCreate()
+        edk.EE_DataSetBufferSizeInSec(5)
+
         t0 = time.time()
         while not self.connected:
-            state = self.edk.EE_EngineGetNextEvent(self.eEvent)
-            if state == errorCodes["EDK_OK"]:
+            state = edk.EE_EngineGetNextEvent(self.eEvent)
+            if state == edk.EDK_OK:
                 self.connected = True
-                self.edk.EE_DataAcquisitionEnable(c_uint(0),c_bool(1))
+                edk.EE_DataAcquisitionEnable(0, True)
                 break
-            if time.time() - t0 > timeout:
-                raise Exception('Timeout while connecting to Epoc!')
+            if time.time() - t0 > self.connectionTimeout:
+                raise PyemotivException('Timeout while connecting to Epoc!')
+            
+        if self.debug:
+            print 'Connected'
                 
-    
     def get_all(self):
         """
         Get block of raw data from the device buffer
@@ -168,68 +90,168 @@ class Epoc(object):
         if not self.connected:
             self.connect()
             
-        container = self.aquire(xrange(self.m))
+        (rawContainer, processedContainer) = self.aquire(getRawData = True, getProcessedData = True, rawDataChannels = xrange(self.m))
+        self.raw = np.array([rawContainer[i] for i in self.raw_channels_idx])
+        self.gyros = np.array([rawContainer[i] for i in self.gyro_idx])
+        self.all_data = rawContainer
+        return (self.all_data, processedContainer)
+    
+    def get_all_raw(self):
+        """
+        Get block of raw data from the device buffer
+        """
+        if not self.connected:
+            self.connect()
+            
+        container = self.aquire(getRawData = True, getProcessedData = False, rawDataChannels = xrange(self.m))
         self.raw = np.array([container[i] for i in self.raw_channels_idx])
         self.gyros = np.array([container[i] for i in self.gyro_idx])
         self.all_data = container
         return self.all_data
     
+    def get_all_processed(self):
+        """
+        Get block of processed data from the device buffer
+        """
+        if not self.connected:
+            self.connect()
+            
+        processedContainer = self.aquire(getRawData = False, getProcessedData = True)
+        return processedContainer
+    
     def get_raw(self):
         if not self.connected:
             self.connect()
-        container = self.aquire(self.raw_channels_idx)
+
+        container = self.aquire(getRawData = True, getProcessedData = False, rawDataChannels = self.raw_channels_idx)
         self.raw = container
         return container
     
     def get_gyros(self):
         if not self.connected:
             self.connect()
-        container = self.aquire(self.gyro_idx)
+
+        container = self.aquire(getRawData = True, getProcessedData = False, rawDataChannels = self.gyro_idx)
         self.gyros = container
         return container
         
-    def aquire(self,idx):
-        state = self.edk.EE_EngineGetNextEvent(self.eEvent)
+    def aquire(self, getRawData = True, getProcessedData = True, rawDataChannels = None, processedDataChannels = None):
+        rawData = False
+        processedData = False
+
+        # FIXME this will DROP/OVERWRITE DATA if, for example, we received some raw data, but not the processed states !
+        while (isinstance(rawData, bool) and not rawData or not getRawData) and (isinstance(processedData, bool) and not processedData or not getProcessedData):
+            if getProcessedData:
+                processedData = self.acquireProcessedData()
         
-        nSamples = c_int()
-        while True:
-            if self.justRawData != True:
-                if (state == errorCodes["EDK_OK"]):
-                    eventType = self.edk.EE_EmoEngineEventGetType(self.eEvent)
-                    self.edk.EE_EmoEngineEventGetUserId(self.eEvent, self.userId)
+            if getProcessedData:
+                rawData = self.acquireRawData(rawDataChannels)
+                
+        if self.debug:
+            print 'Acquired something'
+
+        if (getRawData and getProcessedData):
+            return (rawData, processedData)
+        elif getRawData:
+            return rawData
+        else:
+            return processedData
             
-                    if (eventType == EE_EmoStateUpdated):
-                        self.edk.EE_EmoEngineEventGetEmoState(self.eEvent, self.eState)
-                        timestamp = ES_GetTimeFromStart(self.eState)
+    
+    def acquireRawData(self, idx):
+        nSamples = c_int()
+        edk.EE_DataUpdateHandle(0, self.data_handler)
+        edk.EE_DataGetNumberOfSample(self.data_handler, byref(nSamples))
+        n = nSamples.value
+        if not n:
+            return False
+        container = np.empty((len(idx) , n))
+        k=0
+        for i in idx:
+            data = np.empty((1,n))
+            data_ctype = np.ctypeslib.as_ctypes(data)
+            edk.EE_DataGet(self.data_handler, i, byref(data_ctype), n)
+            data_read = np.ctypeslib.as_array(data_ctype)
+            container[k,:] = data_read[0]
+            k+=1
+        self.times = np.linspace(self.times[-1]+self.sr, 
+                                 self.times[-1]+ n*self.sr, n)            
+        return container
+    
+    def acquireProcessedData(self):
+        state = edk.EE_EngineGetNextEvent(self.eEvent)
+        if (state == edk.EDK_NO_EVENT):
+            return False
+        elif (state == edk.EDK_OK):
+            eventType = edk.EE_EmoEngineEventGetType(self.eEvent)
+            edk.EE_EmoEngineEventGetUserId(self.eEvent, self.userId)
+
+            if (eventType == edk.EE_EmoStateUpdated):
+                edk.EE_EmoEngineEventGetEmoState(self.eEvent, self.eState)
+                timestamp = edk.ES_GetTimeFromStart(self.eState)
+
+                return self.getEmoState(self.userId, self.eState)
+        else:
+            raise PyemotivException('Internal error of Emotiv while acquiring states')        
+
+    def getEmoState(self, userID, eState):
+        expressivStates={}
+        expressivStates[ edk.EXP_EYEBROW     ] = 0
+        expressivStates[ edk.EXP_FURROW      ] = 0
+        expressivStates[ edk.EXP_SMILE       ] = 0
+        expressivStates[ edk.EXP_CLENCH      ] = 0
+        expressivStates[ edk.EXP_SMIRK_LEFT  ] = 0
+        expressivStates[ edk.EXP_SMIRK_RIGHT ] = 0
+        expressivStates[ edk.EXP_LAUGH       ] = 0
+        upperFaceAction = edk.ES_ExpressivGetUpperFaceAction(eState)
+        upperFacePower  = edk.ES_ExpressivGetUpperFaceActionPower(eState)
+        lowerFaceAction = edk.ES_ExpressivGetLowerFaceAction(eState)
+        lowerFacePower  = edk.ES_ExpressivGetLowerFaceActionPower(eState)
+        expressivStates[ upperFaceAction ] = upperFacePower;
+        expressivStates[ lowerFaceAction ] = lowerFacePower;
         
-                        printf("%10.3fs : New EmoState from user %d ...\r", timestamp, userID)
-                        
-                        #logEmoState(ofs, userID, eState, writeHeader);
-                elif (state != errorCodes["EDK_NO_EVENT"]):
-                    raise Exception('Internal error of Emotiv while acquiring states')
+        container = np.zeros(20)
         
-            self.edk.EE_DataUpdateHandle(c_uint(0), self.data_handler)
-            self.edk.EE_DataGetNumberOfSample(self.data_handler, 
-                                              byref(nSamples))
-            n = nSamples.value
-            if not n:
-                continue
-            container = np.empty((len(idx) , n))
-            k=0
-            for i in idx:
-                data = np.empty((1,n))
-                data_ctype = np.ctypeslib.as_ctypes(data)
-                self.edk.EE_DataGet(self.data_handler, i, byref(data_ctype),
-                                    c_uint(n))
-                data_read = np.ctypeslib.as_array(data_ctype)
-                container[k,:] = data_read[0]
-                k+=1
-            self.times = np.linspace(self.times[-1]+self.sr, 
-                                     self.times[-1]+ n*self.sr, n)            
-            return container
+        # General data
+        container[0] = edk.ES_GetTimeFromStart(eState)
+        container[1] = userID
         
+        #Expressive Suite
+        container[2] = edk.ES_GetWirelessSignalStatus(eState)
+        container[3] = edk.ES_ExpressivIsBlink(eState)
+        container[4] = edk.ES_ExpressivIsLeftWink(eState)
+        container[5] = edk.ES_ExpressivIsRightWink(eState)
+        container[6] = edk.ES_ExpressivIsLookingLeft(eState)
+        container[7] = edk.ES_ExpressivIsLookingRight(eState)
+        container[8] = expressivStates[ edk.EXP_EYEBROW ]
+        container[9] = expressivStates[ edk.EXP_FURROW ]
+        container[10] = expressivStates[ edk.EXP_SMILE ]
+        container[11] = expressivStates[ edk.EXP_CLENCH ]
+        container[12] = expressivStates[ edk.EXP_SMIRK_LEFT ]
+        container[13] = expressivStates[ edk.EXP_SMIRK_RIGHT ]
+        container[14] = expressivStates[ edk.EXP_LAUGH ]
         
+        # Affectiv Suite
+        container[15] = edk.ES_AffectivGetExcitementShortTermScore(eState)
+        container[16] = edk.ES_AffectivGetExcitementLongTermScore(eState)
+        container[17] = edk.ES_AffectivGetEngagementBoredomScore(eState)
+        
+        #Cognitive Suite
+        container[18] = edk.ES_CognitivGetCurrentAction(eState)
+        container[19] = edk.ES_CognitivGetCurrentActionPower(eState)
+        
+        return container
+
+    def closeSDK(self):
+        edk.EE_EngineDisconnect()
+        edk.EE_EmoStateFree(self.eState)
+        edk.EE_EmoEngineEventFree(self.eEvent)
+
 if __name__ == "__main__":
     e = Epoc()
-    while True:
-        e.get_raw()
+    i = 0
+    while i < 200:
+        print "Round %d starting" % i
+        e.get_all_processed()
+        i += 1
+    e.closeSDK()
