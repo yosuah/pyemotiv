@@ -37,17 +37,11 @@ class Epoc(object):
     def __init__(self, connectionType = "local", connectionTimeout = 10):
         self.initializeInternalVariables()
         
-        self.f = open('ES.txt', 'w')
-        header = ['Time','UserID','Wireless Signal Status','Blink','Wink Left','Wink Right','Look Left','Look Right','Eyebrow','Furrow','Smile','Clench','Smirk Left','Smirk Right','Laugh','Short Term Excitement','Long Term Excitement','Engagement/Boredom','Cognitiv Action','Cognitiv Power']
-        print >> self.f,header
-        
         self.connected = False
         # either "local" or "remote"
         self.connectionType = "remote"
         self.connectionTimeout = connectionTimeout
-        
-        self.justRawData = False
-        
+
         self.debug = True
     
     
@@ -146,9 +140,6 @@ class Epoc(object):
         
             if getProcessedData:
                 rawData = self.acquireRawData(rawDataChannels)
-                
-        if self.debug:
-            print 'Acquired something'
 
         if (getRawData and getProcessedData):
             return (rawData, processedData)
@@ -157,7 +148,7 @@ class Epoc(object):
         else:
             return processedData
             
-    
+
     def acquireRawData(self, idx):
         nSamples = c_int()
         edk.EE_DataUpdateHandle(0, self.data_handler)
@@ -210,14 +201,14 @@ class Epoc(object):
         expressivStates[ upperFaceAction ] = upperFacePower;
         expressivStates[ lowerFaceAction ] = lowerFacePower;
         
-        container = np.zeros(20)
+        container = np.zeros(22)
         
         # General data
         container[0] = edk.ES_GetTimeFromStart(eState)
         container[1] = userID
+        container[2] = edk.ES_GetWirelessSignalStatus(eState)
         
         #Expressive Suite
-        container[2] = edk.ES_GetWirelessSignalStatus(eState)
         container[3] = edk.ES_ExpressivIsBlink(eState)
         container[4] = edk.ES_ExpressivIsLeftWink(eState)
         container[5] = edk.ES_ExpressivIsRightWink(eState)
@@ -234,15 +225,21 @@ class Epoc(object):
         # Affectiv Suite
         container[15] = edk.ES_AffectivGetExcitementShortTermScore(eState)
         container[16] = edk.ES_AffectivGetExcitementLongTermScore(eState)
-        container[17] = edk.ES_AffectivGetEngagementBoredomScore(eState)
+        container[17] = edk.ES_AffectivGetMeditationScore(eState)
+        container[18] = edk.ES_AffectivGetFrustrationScore(eState)
+        container[19] = edk.ES_AffectivGetEngagementBoredomScore(eState)
         
         #Cognitive Suite
-        container[18] = edk.ES_CognitivGetCurrentAction(eState)
-        container[19] = edk.ES_CognitivGetCurrentActionPower(eState)
+        container[20] = edk.ES_CognitivGetCurrentAction(eState)
+        container[21] = edk.ES_CognitivGetCurrentActionPower(eState)
         
         return container
+    
+    def getProcessedDataFileHeader(self):
+        header = ['Time','UserID','Wireless Signal Status','Blink','Wink Left','Wink Right','Look Left','Look Right','Eyebrow','Furrow','Smile','Clench','Smirk Left','Smirk Right','Laugh','Short Term Excitement','Long Term Excitement','Meditation','Frustration','Engagement/Boredom','Cognitiv Action','Cognitiv Power']
+        return ','.join(header)
 
-    def closeSDK(self):
+    def close(self):
         edk.EE_EngineDisconnect()
         edk.EE_EmoStateFree(self.eState)
         edk.EE_EmoEngineEventFree(self.eEvent)
@@ -250,8 +247,12 @@ class Epoc(object):
 if __name__ == "__main__":
     e = Epoc()
     i = 0
-    while i < 200:
+    data = np.zeros([22, ])
+    while i < 10:
         print "Round %d starting" % i
-        e.get_all_processed()
+        data2 = e.get_all_processed()
+        data = np.vstack((data, data2))
         i += 1
-    e.closeSDK()
+    e.close()
+    np.savetxt("processed.txt", data, delimiter=',', header=e.getProcessedDataFileHeader())
+    print data

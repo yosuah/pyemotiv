@@ -54,3 +54,5 @@ dist/
 Icon?
 ehthumbs.db
 Thumbs.db
+pyemotiv/ES.txt
+pyemotiv/processed.txt
