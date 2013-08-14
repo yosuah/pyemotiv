@@ -2,6 +2,7 @@ from ctypes import *
 import numpy as np
 import time, sys
 import edk
+from pyemotivException import PyemotivException
 
 class Epoc(object):
     def initializeInternalVariables(self):
@@ -9,13 +10,13 @@ class Epoc(object):
         self.eState = edk.EE_EmoStateCreate()
         
         self.userId = 0
-        self.channels = [ 'ED_COUNTER','ED_INTERPOLATED','ED_RAW_CQ',
-                          'ED_AF3','ED_F7','ED_F3','ED_FC5','ED_T7',
-                          'ED_P7','ED_O1','ED_O2','ED_P8','ED_T8',
-                          'ED_FC6','ED_F4','ED_F8','ED_AF4','ED_GYROX',
-                          'ED_GYROY','ED_TIMESTAMP','ED_ES_TIMESTAMP',
-                          'ED_FUNC_ID','ED_FUNC_VALUE','ED_MARKER',
-                          'ED_SYNC_SIGNAL']
+        self.channels = [ 'ED_COUNTER','ED_INTERPOLATED','ED_RAW_CQ', #0-2
+                          'ED_AF3','ED_F7','ED_F3','ED_FC5','ED_T7',  #3-7
+                          'ED_P7','ED_O1','ED_O2','ED_P8','ED_T8',    #8-12
+                          'ED_FC6','ED_F4','ED_F8','ED_AF4','ED_GYROX', #13-17
+                          'ED_GYROY','ED_TIMESTAMP','ED_ES_TIMESTAMP', #18-20
+                          'ED_FUNC_ID','ED_FUNC_VALUE','ED_MARKER',   #21-23
+                          'ED_SYNC_SIGNAL']                           #24
         self.raw_channels_idx = range(3,17)
         self.gyro_idx = [self.channels.index("ED_GYROX"),self.channels.index("ED_GYROY")]
         self.names = [name[3:] for name in self.channels]
@@ -34,12 +35,12 @@ class Epoc(object):
     Class that connects to Emotiv Epoc by wrapping the 
     research SDK dynamic link libraries
     """
-    def __init__(self, connectionType = "local", connectionTimeout = 10):
+    def __init__(self, connectionType = "local", connectionTimeout = 2):
         self.initializeInternalVariables()
         
         self.connected = False
         # either "local" or "remote"
-        self.connectionType = "remote"
+        self.connectionType = connectionType
         self.connectionTimeout = connectionTimeout
 
         self.debug = True
@@ -57,7 +58,7 @@ class Epoc(object):
                 raise PyemotivException("Emotiv Engine start up failed.")
         elif self.connectionType == "remote":
             if edk.EE_EngineRemoteConnect("127.0.0.1", self.composerPort, "Emotiv Systems-5") != 0:
-                raise PyemotivException("Cannot connect to EmoComposer on")
+                raise PyemotivException("Cannot connect to EmoComposer")
         else:
             raise PyemotivException("Unknow connection type - please specify either 'local' or 'remote'.")
         
@@ -69,7 +70,7 @@ class Epoc(object):
             state = edk.EE_EngineGetNextEvent(self.eEvent)
             if state == edk.EDK_OK:
                 self.connected = True
-                edk.EE_DataAcquisitionEnable(0, True)
+                edk.EE_DataAcquisitionEnable(self.userId, True)
                 break
             if time.time() - t0 > self.connectionTimeout:
                 raise PyemotivException('Timeout while connecting to Epoc!')
@@ -83,6 +84,9 @@ class Epoc(object):
         """
         if not self.connected:
             self.connect()
+        
+        if self.connectionType == "remote":
+            raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
             
         (rawContainer, processedContainer) = self.aquire(getRawData = True, getProcessedData = True, rawDataChannels = xrange(self.m))
         self.raw = np.array([rawContainer[i] for i in self.raw_channels_idx])
@@ -96,6 +100,9 @@ class Epoc(object):
         """
         if not self.connected:
             self.connect()
+            
+        if self.connectionType == "remote":
+            raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
             
         container = self.aquire(getRawData = True, getProcessedData = False, rawDataChannels = xrange(self.m))
         self.raw = np.array([container[i] for i in self.raw_channels_idx])
@@ -116,6 +123,9 @@ class Epoc(object):
     def get_raw(self):
         if not self.connected:
             self.connect()
+            
+        if self.connectionType == "remote":
+            raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
 
         container = self.aquire(getRawData = True, getProcessedData = False, rawDataChannels = self.raw_channels_idx)
         self.raw = container
@@ -124,6 +134,9 @@ class Epoc(object):
     def get_gyros(self):
         if not self.connected:
             self.connect()
+            
+        if self.connectionType == "remote":
+            raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
 
         container = self.aquire(getRawData = True, getProcessedData = False, rawDataChannels = self.gyro_idx)
         self.gyros = container
@@ -134,14 +147,14 @@ class Epoc(object):
         processedData = False
 
         # FIXME this will DROP/OVERWRITE DATA if, for example, we received some raw data, but not the processed states !
-        while (isinstance(rawData, bool) and not rawData or not getRawData) and (isinstance(processedData, bool) and not processedData or not getProcessedData):
+        while (isinstance(rawData, bool) or not getRawData) or (isinstance(processedData, bool) or not getProcessedData):
+            if getRawData:
+                rawData = self.acquireRawData(rawDataChannels)
+            
             if getProcessedData:
                 processedData = self.acquireProcessedData()
-        
-            if getProcessedData:
-                rawData = self.acquireRawData(rawDataChannels)
 
-        if (getRawData and getProcessedData):
+        if getRawData and getProcessedData:
             return (rawData, processedData)
         elif getRawData:
             return rawData
@@ -156,6 +169,7 @@ class Epoc(object):
         n = nSamples.value
         if not n:
             return False
+
         container = np.empty((len(idx) , n))
         k=0
         for i in idx:
@@ -166,7 +180,8 @@ class Epoc(object):
             container[k,:] = data_read[0]
             k+=1
         self.times = np.linspace(self.times[-1]+self.sr, 
-                                 self.times[-1]+ n*self.sr, n)            
+                                 self.times[-1]+ n*self.sr, n)
+                            
         return container
     
     def acquireProcessedData(self):
@@ -248,9 +263,9 @@ if __name__ == "__main__":
     e = Epoc()
     i = 0
     data = np.zeros([22, ])
-    while i < 400:
+    while i < 4:
         print "Round %d starting" % i
-        data2 = e.get_all_processed()
+        (k,data2) = e.get_all()
         data = np.vstack((data, data2))
         i += 1
     e.close()

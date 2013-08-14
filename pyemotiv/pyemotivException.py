@@ -1,0 +1,2 @@
+class PyemotivException(Exception):
+    pass
