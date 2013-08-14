@@ -248,11 +248,11 @@ if __name__ == "__main__":
     e = Epoc()
     i = 0
     data = np.zeros([22, ])
-    while i < 10:
+    while i < 400:
         print "Round %d starting" % i
         data2 = e.get_all_processed()
         data = np.vstack((data, data2))
         i += 1
     e.close()
     np.savetxt("processed.txt", data, delimiter=',', header=e.getProcessedDataFileHeader())
-    print data
+    #print data
