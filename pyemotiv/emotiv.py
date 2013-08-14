@@ -4,6 +4,8 @@ import time, sys
 import edk
 from pyemotivException import PyemotivException
 
+# Don't forget to "python setup.py build install" after modifying this file
+
 class Epoc(object):
     def initializeInternalVariables(self):
         self.eEvent = edk.EE_EmoEngineEventCreate()
@@ -39,11 +41,11 @@ class Epoc(object):
         self.initializeInternalVariables()
         
         self.connected = False
+        self.connectionTimeout = connectionTimeout
+        self.debug = True
+        
         # either "local" or "remote"
         self.connectionType = connectionType
-        self.connectionTimeout = connectionTimeout
-
-        self.debug = True
     
     
     def connect(self):   
@@ -78,71 +80,73 @@ class Epoc(object):
         if self.debug:
             print 'Connected'
                 
-    def get_all(self):
+    def get_all(self, waitForResults = True):
         """
         Get block of raw data from the device buffer
         """
-        if not self.connected:
-            self.connect()
-        
-        if self.connectionType == "remote":
-            raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
-            
-        (rawContainer, processedContainer) = self.aquire(getRawData = True, getProcessedData = True, rawDataChannels = xrange(self.m))
-        self.raw = np.array([rawContainer[i] for i in self.raw_channels_idx])
-        self.gyros = np.array([rawContainer[i] for i in self.gyro_idx])
-        self.all_data = rawContainer
-        return (self.all_data, processedContainer)
+        return self.get_data(True, True, waitForResults)
     
-    def get_all_raw(self):
+    def get_all_raw(self, waitForResults = True):
         """
         Get block of raw data from the device buffer
         """
-        if not self.connected:
-            self.connect()
-            
-        if self.connectionType == "remote":
-            raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
-            
-        container = self.aquire(getRawData = True, getProcessedData = False, rawDataChannels = xrange(self.m))
-        self.raw = np.array([container[i] for i in self.raw_channels_idx])
-        self.gyros = np.array([container[i] for i in self.gyro_idx])
-        self.all_data = container
-        return self.all_data
+        return self.get_data(True, False, waitForResults)
     
-    def get_all_processed(self):
+    def get_all_processed(self, waitForResults = True):
         """
         Get block of processed data from the device buffer
         """
+        return self.get_data(False, True, waitForResults)
+    
+    def get_data(self, getRawData = True, getProcessedData = True, waitForResults = True, rawDataChannels = None, processedDataChannels = None):
+        """
+        Get block of raw data from the device buffer
+        """
         if not self.connected:
             self.connect()
+        
+        if getRawData and self.connectionType == "remote":
+            raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
             
-        processedContainer = self.aquire(getRawData = False, getProcessedData = True)
-        return processedContainer
+        (rawContainer, processedContainer) = self.aquire(getRawData = getRawData, getProcessedData = getProcessedData, waitForResults = waitForResults, rawDataChannels = xrange(self.m))
+        
+        if getRawData and not isinstance(rawContainer, bool):
+            self.raw = np.array([rawContainer[i] for i in self.raw_channels_idx])
+            self.gyros = np.array([rawContainer[i] for i in self.gyro_idx])
+            self.all_data = rawContainer
+        
+        if getRawData and getProcessedData:
+            return (self.all_data, processedContainer)
+        elif getRawData:
+            return self.all_data
+        elif getProcessedData:
+            return processedData
+        else:
+            raise PyemotivException("No data requested")
     
-    def get_raw(self):
+    def get_raw(self, waitForResults = True):
         if not self.connected:
             self.connect()
             
         if self.connectionType == "remote":
             raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
 
-        container = self.aquire(getRawData = True, getProcessedData = False, rawDataChannels = self.raw_channels_idx)
+        container = self.aquire(getRawData = True, getProcessedData = False, waitForResults = waitForResults, rawDataChannels = self.raw_channels_idx)
         self.raw = container
         return container
     
-    def get_gyros(self):
+    def get_gyros(self, waitForResults = True):
         if not self.connected:
             self.connect()
             
         if self.connectionType == "remote":
             raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
 
-        container = self.aquire(getRawData = True, getProcessedData = False, rawDataChannels = self.gyro_idx)
+        container = self.aquire(getRawData = True, getProcessedData = False, waitForResults = waitForResults, rawDataChannels = self.gyro_idx)
         self.gyros = container
         return container
         
-    def aquire(self, getRawData = True, getProcessedData = True, rawDataChannels = None, processedDataChannels = None):
+    def aquire(self, getRawData = True, getProcessedData = True, waitForResults = True, rawDataChannels = None, processedDataChannels = None):
         rawData = False
         processedData = False
 
@@ -153,6 +157,9 @@ class Epoc(object):
             
             if getProcessedData:
                 processedData = self.acquireProcessedData()
+            
+            if not waitForResults:
+                break
 
         if getRawData and getProcessedData:
             return (rawData, processedData)
