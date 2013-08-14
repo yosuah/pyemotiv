@@ -1,3 +1,11 @@
+'''
+This file was hand-modified after being auto-generated.
+
+bool parameters in functions weren't recognized properly, so they were commented out
+in the original c code and added by hand to the python code 
+
+'''
+
 '''Wrapper for edk.h
 
 Generated with:
