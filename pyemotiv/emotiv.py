@@ -120,7 +120,7 @@ class Epoc(object):
         elif getRawData:
             return self.all_data
         elif getProcessedData:
-            return processedData
+            return processedContainer
         else:
             raise PyemotivException("No data requested")
     
@@ -151,7 +151,7 @@ class Epoc(object):
         processedData = False
 
         # FIXME this will DROP/OVERWRITE DATA if, for example, we received some raw data, but not the processed states !
-        while (isinstance(rawData, bool) or not getRawData) or (isinstance(processedData, bool) or not getProcessedData):
+        while (isinstance(rawData, bool) and getRawData) or (isinstance(processedData, bool) and getProcessedData):
             if getRawData:
                 rawData = self.acquireRawData(rawDataChannels)
             
@@ -161,12 +161,7 @@ class Epoc(object):
             if not waitForResults:
                 break
 
-        if getRawData and getProcessedData:
-            return (rawData, processedData)
-        elif getRawData:
-            return rawData
-        else:
-            return processedData
+        return (rawData, processedData)
             
 
     def acquireRawData(self, idx):
