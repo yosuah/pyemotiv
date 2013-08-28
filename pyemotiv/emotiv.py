@@ -52,20 +52,16 @@ class Epoc(object):
         """
         Establishes connection to Emotiv Epoc
         """
-        if self.debug:
-            print 'Connecting..'
-
         if self.connectionType == "local":
             if edk.EE_EngineConnect("Emotiv Systems-5") != 0:
                 raise PyemotivException("Emotiv Engine start up failed.")
+            self.data_handler = edk.EE_DataCreate()
+            edk.EE_DataSetBufferSizeInSec(5)
         elif self.connectionType == "remote":
             if edk.EE_EngineRemoteConnect("127.0.0.1", self.composerPort, "Emotiv Systems-5") != 0:
                 raise PyemotivException("Cannot connect to EmoComposer")
         else:
             raise PyemotivException("Unknow connection type - please specify either 'local' or 'remote'.")
-        
-        self.data_handler = edk.EE_DataCreate()
-        edk.EE_DataSetBufferSizeInSec(5)
 
         t0 = time.time()
         while not self.connected:
@@ -76,9 +72,6 @@ class Epoc(object):
                 break
             if time.time() - t0 > self.connectionTimeout:
                 raise PyemotivException('Timeout while connecting to Epoc!')
-            
-        if self.debug:
-            print 'Connected'
                 
     def get_all(self, waitForResults = True):
         """
@@ -198,11 +191,11 @@ class Epoc(object):
                 edk.EE_EmoEngineEventGetEmoState(self.eEvent, self.eState)
                 timestamp = edk.ES_GetTimeFromStart(self.eState)
 
-                return self.getEmoState(self.userId, self.eState)
+                return self.getEmoStates(self.userId, self.eState)
         else:
             raise PyemotivException('Internal error of Emotiv while acquiring states')        
 
-    def getEmoState(self, userID, eState):
+    def getEmoStates(self, userID, eState):
         expressivStates={}
         expressivStates[ edk.EXP_EYEBROW     ] = 0
         expressivStates[ edk.EXP_FURROW      ] = 0
