@@ -68,7 +68,8 @@ class Epoc(object):
             state = edk.EE_EngineGetNextEvent(self.eEvent)
             if state == edk.EDK_OK:
                 self.connected = True
-                edk.EE_DataAcquisitionEnable(self.userId, True)
+                if self.connectionType == "local":
+                    edk.EE_DataAcquisitionEnable(self.userId, True)
                 break
             if time.time() - t0 > self.connectionTimeout:
                 raise PyemotivException('Timeout while connecting to Epoc!')
