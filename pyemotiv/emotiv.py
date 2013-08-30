@@ -74,25 +74,25 @@ class Epoc(object):
             if time.time() - t0 > self.connectionTimeout:
                 raise PyemotivException('Timeout while connecting to Epoc!')
                 
-    def get_all(self, waitForResults = True):
+    def get_all(self, waitForResults = True, timeout = None):
         """
         Get block of raw data from the device buffer
         """
-        return self.get_data(True, True, waitForResults)
+        return self.get_data(True, True, waitForResults, timeout)
     
-    def get_all_raw(self, waitForResults = True):
+    def get_all_raw(self, waitForResults = True, timeout = None):
         """
         Get block of raw data from the device buffer
         """
-        return self.get_data(True, False, waitForResults)
+        return self.get_data(True, False, waitForResults, timeout)
     
-    def get_all_processed(self, waitForResults = True):
+    def get_all_processed(self, waitForResults = True, timeout = None):
         """
         Get block of processed data from the device buffer
         """
-        return self.get_data(False, True, waitForResults)
+        return self.get_data(False, True, waitForResults, timeout)
     
-    def get_data(self, getRawData = True, getProcessedData = True, waitForResults = True, rawDataChannels = None, processedDataChannels = None):
+    def get_data(self, getRawData = True, getProcessedData = True, waitForResults = True, timeout = None, rawDataChannels = None, processedDataChannels = None):
         """
         Get block of raw data from the device buffer
         """
@@ -102,7 +102,7 @@ class Epoc(object):
         if getRawData and self.connectionType == "remote":
             raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
             
-        (rawContainer, processedContainer) = self.aquire(getRawData = getRawData, getProcessedData = getProcessedData, waitForResults = waitForResults, rawDataChannels = xrange(self.m))
+        (rawContainer, processedContainer) = self.aquire(getRawData = getRawData, getProcessedData = getProcessedData, waitForResults = waitForResults, timeout = timeout, rawDataChannels = xrange(self.m))
         
         if getRawData and not isinstance(rawContainer, bool):
             self.raw = np.array([rawContainer[i] for i in self.raw_channels_idx])
@@ -118,42 +118,56 @@ class Epoc(object):
         else:
             raise PyemotivException("No data requested")
     
-    def get_raw(self, waitForResults = True):
+    def get_raw(self, waitForResults = True, timeout = None):
         if not self.connected:
             self.connect()
             
         if self.connectionType == "remote":
             raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
 
-        container = self.aquire(getRawData = True, getProcessedData = False, waitForResults = waitForResults, rawDataChannels = self.raw_channels_idx)
+        container = self.aquire(getRawData = True, getProcessedData = False, waitForResults = waitForResults, timeout = timeout, rawDataChannels = self.raw_channels_idx)
         self.raw = container
         return container
     
-    def get_gyros(self, waitForResults = True):
+    def get_gyros(self, waitForResults = True, timeout = None):
         if not self.connected:
             self.connect()
             
         if self.connectionType == "remote":
             raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
 
-        container = self.aquire(getRawData = True, getProcessedData = False, waitForResults = waitForResults, rawDataChannels = self.gyro_idx)
+        container = self.aquire(getRawData = True, getProcessedData = False, waitForResults = waitForResults, timeout = timeout, rawDataChannels = self.gyro_idx)
         self.gyros = container
         return container
         
-    def aquire(self, getRawData = True, getProcessedData = True, waitForResults = True, rawDataChannels = None, processedDataChannels = None):
+    def aquire(self, getRawData = True, getProcessedData = True, waitForResults = True, timeout = None, rawDataChannels = None, processedDataChannels = None):
         rawData = False
         processedData = False
+        
+        if timeout is not None:
+            t0 = time.time()
 
-        # FIXME this will DROP/OVERWRITE DATA if, for example, we received some raw data, but not the processed states !
         while (isinstance(rawData, bool) and getRawData) or (isinstance(processedData, bool) and getProcessedData):
             if getRawData:
-                rawData = self.acquireRawData(rawDataChannels)
+                if rawData is False:
+                    rawData = self.acquireRawData(rawDataChannels)
+                else:
+                    rawData = np.vstack(rawData, self.acquireRawData(rawDataChannels))
             
             if getProcessedData:
-                processedData = self.acquireProcessedData()
+                if processedData is False:
+                    processedData = self.acquireProcessedData()
+                else:
+                    processedData = np.vstack(processedData, self.acquireProcessedData())
             
             if not waitForResults:
                 break
+
+            if timeout is not None and time.time() - t0 > timeout:
+                errorMessage = 'Timeout while reading data.'
+                if not isinstance(rawData, bool) or not isinstance(processedData, bool):
+                    errorMessage = errorMessage + 'Some data frames were dropped because of this exception.'
+                raise PyemotivException(errorMessage)
 
         return (rawData, processedData)
             
