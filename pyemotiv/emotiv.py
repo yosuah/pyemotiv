@@ -46,7 +46,16 @@ class Epoc(object):
         
         # either "local" or "remote"
         self.connectionType = connectionType
-    
+        
+    def setConnectionType(self, connectionType):
+        self.connectionType = connectionType
+        
+    def getSoftwareVersion(self):
+        a = None
+        b = 1
+        c = 1
+        i = edk.EE_SoftwareGetVersion(a, b, c)
+        return c
     
     def connect(self):   
         """

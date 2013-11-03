@@ -395,6 +395,10 @@ class LibraryLoader(object):
             # FIXME / TODO return '.' and os.path.dirname(__file__)
             for path in self.getplatformpaths(libname):
                 yield path
+            
+            for path in self.other_dirs:
+                print path
+                yield path
 
             path = ctypes.util.find_library(libname)
             if path: yield path
@@ -593,7 +597,8 @@ del loaderclass
 
 # End loader
 
-add_library_search_dirs([])
+# FIXME eperfa
+#add_library_search_dirs(["C:\\Program Files\\Emotiv Research Edition SDK v2.0.0.20\\Applications"])
 
 # Begin libraries
 
