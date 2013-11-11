@@ -57,6 +57,31 @@ class Epoc(object):
         i = edk.EE_SoftwareGetVersion(a, b, c)
         return c
     
+    def getContactQuality(self):
+        while True:
+            state = edk.EE_EngineGetNextEvent(self.eEvent)
+            
+            if state != edk.EDK_OK:
+                continue
+            
+            eventType = edk.EE_EmoEngineEventGetType(self.eEvent)
+            
+            if eventType != edk.EE_EmoStateUpdated:
+                continue
+
+            edk.EE_EmoEngineEventGetUserId(self.eEvent, self.userId)
+            edk.EE_EmoEngineEventGetEmoState(self.eEvent, self.eState)
+
+            numChannels = edk.ES_GetNumContactQualityChannels(state)
+            contactQualityArr = (c_long*numChannels)()
+            edk.ES_GetContactQualityFromAllChannels(self.eState, contactQualityArr, numChannels)
+
+            contactQuality = []
+            for i in range(numChannels):
+                contactQuality.append(contactQualityArr[i])
+
+            return contactQuality
+
     def connect(self):   
         """
         Establishes connection to Emotiv Epoc
@@ -110,7 +135,7 @@ class Epoc(object):
         
         if getRawData and self.connectionType == "remote":
             raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
-            
+
         (rawContainer, processedContainer) = self.aquire(getRawData = getRawData, getProcessedData = getProcessedData, waitForResults = waitForResults, timeout = timeout, rawDataChannels = xrange(self.m))
         
         if getRawData and not isinstance(rawContainer, bool):

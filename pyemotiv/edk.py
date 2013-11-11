@@ -9,7 +9,7 @@ in the original c code and added by hand to the python code
 '''Wrapper for edk.h
 
 Generated with:
-C:\Users\eperfa\Documents\Synetiq\ctypesgen\ctypesgen.py -a -l edk.dll -o edk.py edk.h edkErrorCode.h EmoState.h
+C:\Users\eperfa\Documents\Synetiq\ctypesgen\ctypesgen.py -a -l edk.dll -o edk.py edk.h edkErrorCode.h EmoStateDLL.h
 
 Do not modify this file.
 '''
@@ -397,8 +397,8 @@ class LibraryLoader(object):
                 yield path
             
             for path in self.other_dirs:
-                print path
-                yield path
+                if os.path.exists(path):
+                    yield path
 
             path = ctypes.util.find_library(libname)
             if path: yield path
@@ -538,7 +538,7 @@ class _WindowsLibrary(object):
                 raise
 
 class WindowsLibraryLoader(LibraryLoader):
-    name_formats = ["%s.dll", "lib%s.dll", "%slib.dll"]
+    name_formats = ["%s", "%s.dll", "lib%s.dll", "%slib.dll"]
 
     def load_library(self, libname):
         try:
@@ -598,7 +598,8 @@ del loaderclass
 # End loader
 
 # FIXME eperfa
-#add_library_search_dirs(["C:\\Program Files\\Emotiv Research Edition SDK v2.0.0.20\\Applications"])
+#add_library_search_dirs(["C:\\Program Files\\Emotiv Research Edition SDK v2.0.0.20\\dll\\32 bits\\"])
+add_library_search_dirs(["C:\\Progra~1\\Emotiv~1.20\\dll\\32bit~1\\"])
 
 # Begin libraries
 
