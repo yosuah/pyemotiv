@@ -3,6 +3,7 @@ import numpy as np
 import time, sys
 import edk
 from pyemotivException import PyemotivException
+import os
 
 # Don't forget to "python setup.py build install" after modifying this file
 
@@ -15,23 +16,22 @@ class Epoc(object):
         self.channels = [ 'ED_COUNTER','ED_INTERPOLATED','ED_RAW_CQ', #0-2
                           'ED_AF3','ED_F7','ED_F3','ED_FC5','ED_T7',  #3-7
                           'ED_P7','ED_O1','ED_O2','ED_P8','ED_T8',    #8-12
-                          'ED_FC6','ED_F4','ED_F8','ED_AF4','ED_GYROX', #13-17
-                          'ED_GYROY','ED_TIMESTAMP','ED_ES_TIMESTAMP', #18-20
+                          'ED_FC6','ED_F4','ED_F8','ED_AF4',          #13-17
+                          'ED_GYROX', 'ED_GYROY','ED_TIMESTAMP','ED_ES_TIMESTAMP', #18-20
                           'ED_FUNC_ID','ED_FUNC_VALUE','ED_MARKER',   #21-23
                           'ED_SYNC_SIGNAL']                           #24
         self.raw_channels_idx = range(3,17)
         self.gyro_idx = [self.channels.index("ED_GYROX"),self.channels.index("ED_GYROY")]
         self.names = [name[3:] for name in self.channels]
-        self.name_dict = {name:i for name,i in zip(self.names,
-                                                   xrange(len(self.names)))}
+        #self.name_dict = {name:i for name,i in zip(self.names, xrange(len(self.names)))} # dict comprehension is new in Python 2.7, and this line is useless anyway
         self.m = len(self.channels)
-        self.all_data = np.zeros((25,2))
-        self.raw = np.zeros((14,2))
-        self.gyros = np.zeros((2,2))
         self.sr = 1/127.94
         self.times = [0.]
         
         self.composerPort = 1726
+        
+        (self.rawData, self.processedData, self.contactQuality) = (None, None, None)
+        (self.rawFile, self.processedFile, self.qualityFile) = (None, None, None)
 
     """
     Class that connects to Emotiv Epoc by wrapping the 
@@ -57,31 +57,6 @@ class Epoc(object):
         i = edk.EE_SoftwareGetVersion(a, b, c)
         return c
     
-    def getContactQuality(self):
-        while True:
-            state = edk.EE_EngineGetNextEvent(self.eEvent)
-            
-            if state != edk.EDK_OK:
-                continue
-            
-            eventType = edk.EE_EmoEngineEventGetType(self.eEvent)
-            
-            if eventType != edk.EE_EmoStateUpdated:
-                continue
-
-            edk.EE_EmoEngineEventGetUserId(self.eEvent, self.userId)
-            edk.EE_EmoEngineEventGetEmoState(self.eEvent, self.eState)
-
-            numChannels = edk.ES_GetNumContactQualityChannels(state)
-            contactQualityArr = (c_long*numChannels)()
-            edk.ES_GetContactQualityFromAllChannels(self.eState, contactQualityArr, numChannels)
-
-            contactQuality = []
-            for i in range(numChannels):
-                contactQuality.append(contactQualityArr[i])
-
-            return contactQuality
-
     def connect(self):   
         """
         Establishes connection to Emotiv Epoc
@@ -107,106 +82,103 @@ class Epoc(object):
                 break
             if time.time() - t0 > self.connectionTimeout:
                 raise PyemotivException('Timeout while connecting to Epoc!')
-                
-    def get_all(self, waitForResults = True, timeout = None):
+
+    def getData(self, getRawData = False, getProcessedData = False, getContactQuality = False, waitForResults = True, timeout = None, rawDataChannels = None, processedDataChannels = None):
         """
-        Get block of raw data from the device buffer
-        """
-        return self.get_data(True, True, waitForResults, timeout)
-    
-    def get_all_raw(self, waitForResults = True, timeout = None):
-        """
-        Get block of raw data from the device buffer
-        """
-        return self.get_data(True, False, waitForResults, timeout)
-    
-    def get_all_processed(self, waitForResults = True, timeout = None):
-        """
-        Get block of processed data from the device buffer
-        """
-        return self.get_data(False, True, waitForResults, timeout)
-    
-    def get_data(self, getRawData = True, getProcessedData = True, waitForResults = True, timeout = None, rawDataChannels = None, processedDataChannels = None):
-        """
-        Get block of raw data from the device buffer
+        Get data from the device buffer
         """
         if not self.connected:
             self.connect()
         
         if getRawData and self.connectionType == "remote":
             raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
+        
+        if getRawData and rawDataChannels is None:
+            rawDataChannels = xrange(self.m)
 
-        (rawContainer, processedContainer) = self.aquire(getRawData = getRawData, getProcessedData = getProcessedData, waitForResults = waitForResults, timeout = timeout, rawDataChannels = xrange(self.m))
-        
-        if getRawData and not isinstance(rawContainer, bool):
-            self.raw = np.array([rawContainer[i] for i in self.raw_channels_idx])
-            self.gyros = np.array([rawContainer[i] for i in self.gyro_idx])
-            self.all_data = rawContainer
-        
-        if getRawData and getProcessedData:
-            return (self.all_data, processedContainer)
-        elif getRawData:
-            return self.all_data
-        elif getProcessedData:
-            return processedContainer
-        else:
-            raise PyemotivException("No data requested")
-    
-    def get_raw(self, waitForResults = True, timeout = None):
-        if not self.connected:
-            self.connect()
+        (rawContainer, processedContainer, contactQuality) = \
+            self.aquire(getRawData, getProcessedData, getContactQuality, waitForResults, timeout, rawDataChannels)
             
-        if self.connectionType == "remote":
-            raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
+        return (rawContainer, processedContainer, contactQuality) 
 
-        container = self.aquire(getRawData = True, getProcessedData = False, waitForResults = waitForResults, timeout = timeout, rawDataChannels = self.raw_channels_idx)
-        self.raw = container
-        return container
-    
-    def get_gyros(self, waitForResults = True, timeout = None):
-        if not self.connected:
-            self.connect()
-            
-        if self.connectionType == "remote":
-            raise PyemotivException("No raw data available when using EmoComposer - please query only the processed data")
-
-        container = self.aquire(getRawData = True, getProcessedData = False, waitForResults = waitForResults, timeout = timeout, rawDataChannels = self.gyro_idx)
-        self.gyros = container
-        return container
-        
-    def aquire(self, getRawData = True, getProcessedData = True, waitForResults = True, timeout = None, rawDataChannels = None, processedDataChannels = None):
+    def aquire(self, getRawData = False, getProcessedData = False, getContactQuality = False, waitForResults = True, timeout = None, rawDataChannels = None, processedDataChannels = None):
         rawData = False
         processedData = False
+        contactQuality = False
         
         if timeout is not None:
             t0 = time.time()
 
         while (isinstance(rawData, bool) and getRawData) or (isinstance(processedData, bool) and getProcessedData):
             if getRawData:
-                if rawData is False:
-                    rawData = self.acquireRawData(rawDataChannels)
-                else:
-                    rawData = np.vstack(rawData, self.acquireRawData(rawDataChannels))
+                raw = self._acquireRawDataIndividually(rawDataChannels)
+                if not isinstance(raw, bool):
+                    if rawData is False:
+                        rawData = raw
+                    else:
+                        rawData = np.vstack((rawData, raw))
             
-            if getProcessedData:
-                if processedData is False:
-                    processedData = self.acquireProcessedData()
-                else:
-                    processedData = np.vstack(processedData, self.acquireProcessedData())
+            event = edk.EE_EngineGetNextEvent(self.eEvent)
+            if event != edk.EDK_OK and event != edk.EDK_NO_EVENT:
+                raise PyemotivException('Internal error of Emotiv while acquiring states')
+            
+            if event == edk.EDK_OK:
+                edk.EE_EmoEngineEventGetUserId(self.eEvent, self.userId)
+                eventType = edk.EE_EmoEngineEventGetType(self.eEvent)
+                
+                if eventType == edk.EE_EmoStateUpdated:
+                    if getProcessedData:
+                        if processedData is False:
+                            processedData = self._acquireProcessedData(True)
+                        else:
+                            processedData = np.vstack((processedData, self._acquireProcessedData(True)))
+                    
+                    if getContactQuality:
+                        if contactQuality is False:
+                            contactQuality = self._acquireContactQuality()
+                        else:
+                            contactQuality = np.vstack((contactQuality, self._acquireContactQuality()))
             
             if not waitForResults:
                 break
-
+            
             if timeout is not None and time.time() - t0 > timeout:
                 errorMessage = 'Timeout while reading data.'
                 if not isinstance(rawData, bool) or not isinstance(processedData, bool):
                     errorMessage = errorMessage + 'Some data frames were dropped because of this exception.'
                 raise PyemotivException(errorMessage)
 
-        return (rawData, processedData)
+        return (rawData, processedData, contactQuality)
             
 
-    def acquireRawData(self, idx):
+    def _acquireRawDataBatch(self, idx):
+        """
+        Acquire raw data points in one batch. Requires SDK v2+
+        """
+
+        nSamples = c_int()
+        edk.EE_DataUpdateHandle(0, self.data_handler)
+        edk.EE_DataGetNumberOfSample(self.data_handler, byref(nSamples))
+        n = nSamples.value
+        if not n or n == 0:
+            return False
+
+        data = np.empty((len(idx) , n))
+        data_ctype = np.ctypeslib.as_ctypes(data)
+        edk.EE_DataGetMultiChannels(self.data_handler, idx, len(idx), data_ctype, n)
+        data_read = np.ctypeslib.as_array(data_ctype)
+        data = data_read
+
+        self.times = np.linspace(self.times[-1]+self.sr, 
+                                 self.times[-1]+ n*self.sr, n)
+                            
+        return data
+
+    def _acquireRawDataIndividually(self, idx):
+        """
+        Acquire raw data points channel by channel and then combine them.
+        It's slower but backwards-compatible
+        """
         nSamples = c_int()
         edk.EE_DataUpdateHandle(0, self.data_handler)
         edk.EE_DataGetNumberOfSample(self.data_handler, byref(nSamples))
@@ -225,26 +197,46 @@ class Epoc(object):
             k+=1
         self.times = np.linspace(self.times[-1]+self.sr, 
                                  self.times[-1]+ n*self.sr, n)
-                            
-        return container
+
+        return container.transpose()
+
     
-    def acquireProcessedData(self):
-        state = edk.EE_EngineGetNextEvent(self.eEvent)
-        if (state == edk.EDK_NO_EVENT):
-            return False
-        elif (state == edk.EDK_OK):
-            eventType = edk.EE_EmoEngineEventGetType(self.eEvent)
-            edk.EE_EmoEngineEventGetUserId(self.eEvent, self.userId)
+    def _acquireProcessedData(self, includeUnscaledValues = False):
+        """
+        Gets the processed data values.
+        
+        If includeUnscaledValues is True then the unscaled values are also reported, making the resulting array larget.
+        Only available in SDK v2+
+        """
+        edk.EE_EmoEngineEventGetEmoState(self.eEvent, self.eState)
 
-            if (eventType == edk.EE_EmoStateUpdated):
-                edk.EE_EmoEngineEventGetEmoState(self.eEvent, self.eState)
-                timestamp = edk.ES_GetTimeFromStart(self.eState)
+        return self.getEmoStates(includeUnscaledValues)
+    
+    def _acquireContactQuality(self):
+        edk.EE_EmoEngineEventGetUserId(self.eEvent, self.userId)
+        edk.EE_EmoEngineEventGetEmoState(self.eEvent, self.eState)
 
-                return self.getEmoStates(self.userId, self.eState)
-        else:
-            raise PyemotivException('Internal error of Emotiv while acquiring states')        
+        numChannels = edk.ES_GetNumContactQualityChannels(self.eEvent)
+        contactQualityArr = (c_long*numChannels)()
+        edk.ES_GetContactQualityFromAllChannels(self.eState, contactQualityArr, numChannels)
 
-    def getEmoStates(self, userID, eState):
+        contactQuality = []
+        contactQuality.append(edk.ES_GetTimeFromStart(self.eState))
+        contactQuality.append(self.userId)
+        contactQuality.append(edk.ES_GetWirelessSignalStatus(self.eState))
+        
+        batteryChargeLevel = c_int()
+        batteryMaxChargeLevel = c_int()
+        edk.ES_GetBatteryChargeLevel(self.eState, byref(batteryChargeLevel), byref(batteryMaxChargeLevel))
+        contactQuality.append(batteryChargeLevel.value)
+        contactQuality.append(batteryMaxChargeLevel.value)
+        
+        for i in range(numChannels):
+            contactQuality.append(contactQualityArr[i])
+
+        return contactQuality
+
+    def getEmoStates(self, includeUnscaledValues = False):
         expressivStates={}
         expressivStates[ edk.EXP_EYEBROW     ] = 0
         expressivStates[ edk.EXP_FURROW      ] = 0
@@ -253,65 +245,214 @@ class Epoc(object):
         expressivStates[ edk.EXP_SMIRK_LEFT  ] = 0
         expressivStates[ edk.EXP_SMIRK_RIGHT ] = 0
         expressivStates[ edk.EXP_LAUGH       ] = 0
-        upperFaceAction = edk.ES_ExpressivGetUpperFaceAction(eState)
-        upperFacePower  = edk.ES_ExpressivGetUpperFaceActionPower(eState)
-        lowerFaceAction = edk.ES_ExpressivGetLowerFaceAction(eState)
-        lowerFacePower  = edk.ES_ExpressivGetLowerFaceActionPower(eState)
+        upperFaceAction = edk.ES_ExpressivGetUpperFaceAction(self.eState)
+        upperFacePower  = edk.ES_ExpressivGetUpperFaceActionPower(self.eState)
+        lowerFaceAction = edk.ES_ExpressivGetLowerFaceAction(self.eState)
+        lowerFacePower  = edk.ES_ExpressivGetLowerFaceActionPower(self.eState)
         expressivStates[ upperFaceAction ] = upperFacePower;
         expressivStates[ lowerFaceAction ] = lowerFacePower;
         
-        container = np.zeros(22)
+        if includeUnscaledValues:
+            container = np.zeros(33)
+        else:
+            container = np.zeros(21)
         
         # General data
-        container[0] = edk.ES_GetTimeFromStart(eState)
-        container[1] = userID
-        container[2] = edk.ES_GetWirelessSignalStatus(eState)
+        container[0] = edk.ES_GetTimeFromStart(self.eState)
+        container[1] = self.userId
         
         #Expressive Suite
-        container[3] = edk.ES_ExpressivIsBlink(eState)
-        container[4] = edk.ES_ExpressivIsLeftWink(eState)
-        container[5] = edk.ES_ExpressivIsRightWink(eState)
-        container[6] = edk.ES_ExpressivIsLookingLeft(eState)
-        container[7] = edk.ES_ExpressivIsLookingRight(eState)
-        container[8] = expressivStates[ edk.EXP_EYEBROW ]
-        container[9] = expressivStates[ edk.EXP_FURROW ]
-        container[10] = expressivStates[ edk.EXP_SMILE ]
-        container[11] = expressivStates[ edk.EXP_CLENCH ]
-        container[12] = expressivStates[ edk.EXP_SMIRK_LEFT ]
-        container[13] = expressivStates[ edk.EXP_SMIRK_RIGHT ]
-        container[14] = expressivStates[ edk.EXP_LAUGH ]
+        container[2] = edk.ES_ExpressivIsBlink(self.eState)
+        container[3] = edk.ES_ExpressivIsLeftWink(self.eState)
+        container[4] = edk.ES_ExpressivIsRightWink(self.eState)
+        container[5] = edk.ES_ExpressivIsLookingLeft(self.eState)
+        container[6] = edk.ES_ExpressivIsLookingRight(self.eState)
+        container[7] = expressivStates[ edk.EXP_EYEBROW ]
+        container[8] = expressivStates[ edk.EXP_FURROW ]
+        container[9] = expressivStates[ edk.EXP_SMILE ]
+        container[10] = expressivStates[ edk.EXP_CLENCH ]
+        container[11] = expressivStates[ edk.EXP_SMIRK_LEFT ]
+        container[12] = expressivStates[ edk.EXP_SMIRK_RIGHT ]
+        container[13] = expressivStates[ edk.EXP_LAUGH ]
         
         # Affectiv Suite
-        container[15] = edk.ES_AffectivGetExcitementShortTermScore(eState)
-        container[16] = edk.ES_AffectivGetExcitementLongTermScore(eState)
-        container[17] = edk.ES_AffectivGetMeditationScore(eState)
-        container[18] = edk.ES_AffectivGetFrustrationScore(eState)
-        container[19] = edk.ES_AffectivGetEngagementBoredomScore(eState)
-        
+        container[14] = edk.ES_AffectivGetExcitementShortTermScore(self.eState)
+        container[15] = edk.ES_AffectivGetExcitementLongTermScore(self.eState)
+        container[16] = edk.ES_AffectivGetMeditationScore(self.eState)
+        container[17] = edk.ES_AffectivGetFrustrationScore(self.eState)
+        container[18] = edk.ES_AffectivGetEngagementBoredomScore(self.eState)
+
         #Cognitive Suite
-        container[20] = edk.ES_CognitivGetCurrentAction(eState)
-        container[21] = edk.ES_CognitivGetCurrentActionPower(eState)
-        
+        container[19] = edk.ES_CognitivGetCurrentAction(self.eState)
+        container[20] = edk.ES_CognitivGetCurrentActionPower(self.eState)
+
+        # Affective unscaled model parameters
+        if includeUnscaledValues:
+            functionNames = ['ES_AffectivGetExcitementShortTermModelParams',
+                             'ES_AffectivGetMeditationModelParams', 
+                             'ES_AffectivGetFrustrationModelParams', 
+                             'ES_AffectivGetEngagementBoredomModelParams']
+            containerIndex = 21
+
+            for functionName in functionNames:
+                rawScore = c_int()
+                minScale = c_int()
+                maxScale = c_int()
+                scaledScore = c_int()
+                function = getattr(edk, functionName)
+                function(self.eState, byref(rawScore), byref(minScale), byref(maxScale))
+                container[containerIndex] = rawScore.value
+                containerIndex += 1
+                container[containerIndex] = minScale.value
+                containerIndex += 1
+                container[containerIndex] = maxScale.value
+                containerIndex += 1
+
         return container
     
-    def getProcessedDataFileHeader(self):
-        header = ['Time','UserID','Wireless Signal Status','Blink','Wink Left','Wink Right','Look Left','Look Right','Eyebrow','Furrow','Smile','Clench','Smirk Left','Smirk Right','Laugh','Short Term Excitement','Long Term Excitement','Meditation','Frustration','Engagement/Boredom','Cognitiv Action','Cognitiv Power']
+    def addMarker(self, marker):
+        edk.EE_DataSetMarker(self.userId, marker)
+
+    def getProcessedDataFileHeader(self, includeUnscaledValues = False):
+        header = ['Time From Start','User ID',
+                  'Blink','Wink Left','Wink Right','Look Left','Look Right','Eyebrow','Furrow','Smile','Clench','Smirk Left','Smirk Right','Laugh',
+                  'Short Term Excitement','Long Term Excitement','Meditation','Frustration','Engagement/Boredom',
+                  'Cognitiv Action','Cognitiv Power']
+        
+        if includeUnscaledValues:
+            for name in ['Short Term Excitement','Meditation','Frustration','Engagement/Boredom',]: #there is no long term exc for some reason
+                for score in ['raw', 'min', 'max']:
+                    header.append(name + " " + score)
+        
         return ','.join(header)
 
+    def getRawDataFileHeader(self):
+        return ','.join(self.channels)
+
+    def getContactQualityFileHeader(self):
+        header = ['Time From Start','User ID','Wireless Signal Status', 'Battery Charge Level', 'Battery Max Charge Level']
+        
+        for channel in self.channels:
+            header.append(channel)
+        
+        return ','.join(header)
+    
     def close(self):
         edk.EE_EngineDisconnect()
         edk.EE_EmoStateFree(self.eState)
         edk.EE_EmoEngineEventFree(self.eEvent)
+        self.rawFile.close()
+        self.processedFile.close()
+        self.qualityFile.close()
+        
+    def collectData(self):
+        (raw, processed, contact) = \
+            self.getData(getRawData = True, getProcessedData = True, getContactQuality = True, waitForResults = True)    
+        
+        if self.rawData is None and self.processedData is None and self.contactQuality is None:
+            (self.rawData, self.processedData, self.contactQuality) = (raw, processed, contact)
+        else:
+            self.rawData = np.vstack((self.rawData, raw))
+            self.processedData = np.vstack((self.processedData, processed))
+            self.contactQuality = np.vstack((self.contactQuality, contact))
+            
+        if self.isMarkerReceived(raw, 254):
+            return False
+        
+        return True
+            
+    def isMarkerReceived(self, rawData, marker):
+        for markerItem in rawData[:, 23]:
+            if markerItem != 0:
+                print markerItem
+            if markerItem == marker:
+                return True
+        
+    def save(self, directory = None):
+        if directory is not None:
+            originalDir = os.getcwd()
+            
+            resultsDir = os.path.join(directory, "results")
+            if not os.path.exists(resultsDir):
+                os.mkdir(resultsDir)
+            
+            os.chdir(resultsDir)
+
+            idFile = open("last_id.txt", "r+")
+            currentId = int(idFile.readline()) + 1
+        
+            # Maybe the last_id.txt is out of date, so we update it if needed
+            while os.path.exists("results_" + str(currentId)):
+                currentId = currentId + 1
+            
+            currentId = str(currentId)
+        
+            # Overwrite the id in the file
+            idFile.seek(0,0)
+            idFile.write(currentId)
+            idFile.close()
+    
+            os.mkdir("results_" + currentId)
+            os.chdir("results_" + currentId)
+            resultsDir = os.getcwd()
+            
+        if self.rawFile is None or self.processedFile is None or self.qualityFile is None:
+            self.rawFile = file('raw.txt', 'a')
+            self.processedFile = file('processed.txt', 'a')
+            self.qualityFile = file('quality.txt', 'a') 
+            np.savetxt(self.rawFile, self.rawData, delimiter=',', header=self.getRawDataFileHeader())
+            np.savetxt(self.processedFile, self.processedData, delimiter=',', header=self.getProcessedDataFileHeader(True))
+            np.savetxt(self.qualityFile, self.contactQuality, delimiter=',', header=self.getContactQualityFileHeader())
+        else:
+            # no headers if the files are already open and we are just appending
+            np.savetxt(self.rawFile, self.rawData, delimiter=',')
+            np.savetxt(self.processedFile, self.processedData, delimiter=',')
+            np.savetxt(self.qualityFile, self.contactQuality, delimiter=',')
+            
+        (self.rawData, self.processedData, self.contactQuality) = (None, None, None)
+            
+        self.rawFile.flush()
+        self.processedFile.flush()
+        self.qualityFile.flush()
 
 if __name__ == "__main__":
-    e = Epoc()
+    e = Epoc("local")
     i = 0
-    data = np.zeros([22, ])
-    while i < 4:
-        print "Round %d starting" % i
-        (k,data2) = e.get_all()
-        data = np.vstack((data, data2))
+    
+    directory = "J:/home/eperfa/Synetiq/Mindr/"
+    
+    inspect = False
+    save = True
+
+    while inspect:
+        time.sleep(0.01)
+        save = False
+        (raw, processed, contact) = \
+            e.getData(getRawData = True, getProcessedData = False, getContactQuality = False, waitForResults = True)
+            
+        if e.isMarkerReceived(raw, 1):
+            inspect = False
+            save = True
+            print "Start marker detected"
+
+    startTime = time.time()
+
+    print "Saving EEG data"
+    while save:
         i += 1
+        time.sleep(0.01)
+        ok = e.collectData()
+        if i % 100 == 0:
+            e.save()
+        if not ok:
+            save = False
+            inspect = False
+            print "Stop marker detected, stopping EEG data saving"
+        if time.time() - startTime > 360:
+            print "Timeout"
+            save = False
+
     e.close()
-    np.savetxt("processed.txt", data, delimiter=',', header=e.getProcessedDataFileHeader())
+    e.save(directory)
+
     #print data
