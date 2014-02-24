@@ -99,7 +99,7 @@ class Epoc(object):
         (rawContainer, processedContainer, contactQuality) = \
             self.aquire(getRawData, getProcessedData, getContactQuality, waitForResults, timeout, rawDataChannels)
             
-        return (rawContainer, processedContainer, contactQuality) 
+        return (rawContainer, processedContainer, contactQuality)
 
     def aquire(self, getRawData = False, getProcessedData = False, getContactQuality = False, waitForResults = True, timeout = None, rawDataChannels = None, processedDataChannels = None):
         rawData = False
@@ -404,6 +404,9 @@ class Epoc(object):
             np.savetxt(self.processedFile, self.processedData, delimiter=',', header=self.getProcessedDataFileHeader(True))
             np.savetxt(self.qualityFile, self.contactQuality, delimiter=',', header=self.getContactQualityFileHeader())
         else:
+            self.rawFile = file('raw.txt', 'a')
+            self.processedFile = file('processed.txt', 'a')
+            self.qualityFile = file('quality.txt', 'a')
             # no headers if the files are already open and we are just appending
             np.savetxt(self.rawFile, self.rawData, delimiter=',')
             np.savetxt(self.processedFile, self.processedData, delimiter=',')
@@ -443,12 +446,13 @@ if __name__ == "__main__":
         time.sleep(0.01)
         ok = e.collectData()
         if i % 100 == 0:
-            e.save()
+            e.save(directory)
+            print "flushed"
         if not ok:
             save = False
             inspect = False
             print "Stop marker detected, stopping EEG data saving"
-        if time.time() - startTime > 360:
+        if time.time() - startTime > 36:
             print "Timeout"
             save = False
 
