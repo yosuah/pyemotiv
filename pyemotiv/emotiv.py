@@ -123,7 +123,9 @@ class Epoc(object):
         if timeout is not None:
             t0 = time.time()
 
-        while (isinstance(rawData, bool) and getRawData) or (isinstance(processedData, bool) and getProcessedData):
+        while (getRawData and type(rawData) is bool) \
+                or (getProcessedData and type(processedData) is bool) \
+                or (getContactQuality and type(contactQuality) is bool):
             currentTime = time.time()
             if getRawData:
                 raw = self._acquireRawDataSensorBySensor(rawDataChannels, currentTime = currentTime)
@@ -224,7 +226,7 @@ class Epoc(object):
         self.times = np.linspace(self.times[-1]+self.sr, 
                                  self.times[-1]+ n*self.sr, n)
 
-        lastEmotivTimestamp = container[-1, 20]
+        #lastEmotivTimestamp = container[-1, 20]
         for i in range(n):
             #container[i, 0] = currentTime - (lastEmotivTimestamp - container[i, 20])
             #container[i, 0] = currentTime
@@ -445,13 +447,13 @@ class Epoc(object):
                 if len(processed.shape) > 1:
                     self.processedData = processed
                 else:
-                    self.processedData = np.empty((1, 33))
+                    self.processedData = np.empty((1, 38))
                     self.processedData[0] = processed
                 
                 if len(contact.shape) > 1:
                     self.contactQuality = contact
                 else:
-                    self.contactQuality = np.empty((1, 23))
+                    self.contactQuality = np.empty((1, 24))
                     self.contactQuality[0] = contact
                     
                 self.clearDataArraysOnNextRead = False
@@ -480,17 +482,23 @@ class Epoc(object):
         self.processedHDFStore = pd.HDFStore(os.path.join(directory, "processed.h5"))
         self.contactHDFStore = pd.HDFStore(os.path.join(directory, "contact.h5"))
 
-    def readDataToHDF(self):
+    def readDataToHDF(self, getRawData = True, getProcessedData = True, getContactQuality = True, waitForResults = True):
         if self.connectionType == "local":
             (self.lastRaw, self.lastProcessed, self.lastContact) = \
-                self.getData(getRawData = True, getProcessedData = True, getContactQuality = True, waitForResults = True)    
+                self.getData(getRawData, getProcessedData, getContactQuality, waitForResults)
             
             if self.rawHDFStore is None:
                 self.openHDFStore()
 
-            self.rawHDFStore.append(        'raw',       pd.DataFrame(self.lastRaw, columns = self.getRawDataFileHeader(joinAsString = False)).set_index(['Local timestamp']))
-            self.processedHDFStore.append(  'processed', pd.DataFrame(self.lastProcessed, columns = self.getProcessedDataFileHeader(includeUnscaledValues = True, joinAsString = False)).set_index(['Local timestamp']))
-            self.contactHDFStore.append(    'contact',   pd.DataFrame(self.lastContact, columns = self.getContactQualityFileHeader(joinAsString = False)).set_index(['Local timestamp']))
+            if getRawData and type(self.lastRaw) is not bool:
+                self.rawHDFStore.append(        'raw', \
+                    pd.DataFrame(self.lastRaw, columns = self.getRawDataFileHeader(joinAsString = False)).set_index(['Local timestamp']))
+            if getProcessedData and type(self.lastProcessed) is not bool:
+                self.processedHDFStore.append(  'processed', \
+                    pd.DataFrame(self.lastProcessed, columns = self.getProcessedDataFileHeader(includeUnscaledValues = True, joinAsString = False)).set_index(['Local timestamp']))
+            if getContactQuality and type(self.lastContact) is not bool:
+                self.contactHDFStore.append(    'contact', \
+                    pd.DataFrame(self.lastContact, columns = self.getContactQualityFileHeader(joinAsString = False)).set_index(['Local timestamp']))
 
         else: # remote, fixme
             (raw, processed, contact) = \
